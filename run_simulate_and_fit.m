@@ -27,6 +27,7 @@ ylabel('Conc (mM)')
 
 %% fit data
 fitdcemri(Ctoi,Crr,time_min,'robust_linear')
+%%
 fitdcemri(Ctoi,Crr,time_min,'lrrm')
 fitdcemri(Ctoi,Crr,time_min,'lrrm_nonneg')
 fitdcemri(Ctoi,Crr,time_min,[1,1,1,1],[0,0,0,0],[4,4,4,4],'NLRRM')

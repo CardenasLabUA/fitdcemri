@@ -149,8 +149,8 @@ if nargin == 4 %% LRRM
         case {'robust_linear'}
             
             % Estimate parameters using robust method
-            B = robustfit(X,y);
-            B = B(2:end);
+            B = robustfit(X,y,'ols',[],'off');
+            
             
         case {'LRRM','lrrm'} 
             
