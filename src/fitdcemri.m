@@ -2,16 +2,16 @@ function pars = fitdcemri(varargin)
 %  DCE_MRI_FIT performs fitting to estimate DCE MRI parameters for the following models:
 %
 %    1) Linear Reference Region Model
-%           pars = FITDCEMRI(toi,rr,time,'lsq')
+%           pars = FITDCEMRI(toi,rr,time,'lrrm')
 %
 %    2) Non-Linear Reference Region Model
-%           pars = FITDCEMRI(toi,rr,time,x0,lb,ub,'RRM')
+%           pars = FITDCEMRI(toi,rr,time,x0,lb,ub,'NLRRM')
 %
-%    3) Linear Tofts Model
+%    3) Linear convolute_with_exp_decay Model
 %           pars = FITDCEMRI(Ctoi,Cp,time)
 %
-%    4) Non-linear Tofts Model
-%           pars = FITDCEMRI(Ctoi,Cp,time,x0,lb,ub,'Tofts')
+%    4) Non-linear convolute_with_exp_decay Model
+%           pars = FITDCEMRI(Ctoi,Cp,time,x0,lb,ub,'convolute_with_exp_decay')
 %
 %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 %   Linear Reference Region Model (LRRM):
@@ -40,7 +40,7 @@ function pars = fitdcemri(varargin)
 %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 %   Non-Linear Reference Region Model (NRRM):
 %~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-%   pars = fitdcemri(toi,rr,time,x0,lb,ub,'RRM')
+%   pars = fitdcemri(toi,rr,time,x0,lb,ub,'NLRRM')
 %    /::INPUTS::\
 %       toi: a column vector of either delta R1 values or Contrast Agent(CA)
 %           Concentration over time for the Tissue of Interest
@@ -53,7 +53,7 @@ function pars = fitdcemri(varargin)
 %       lb: vector of lowerbounds for the parameters (same form as above)
 %       ub: vector of upperbounds for the parameters (same form as above)
 %       'RRM': This string indicates that you want the non-linear Reference
-%           Region Model (versus the non-linear Tofts Model)
+%           Region Model (versus the non-linear convolute_with_exp_decay Model)
 %    /::OUTPUT::\
 %       pars: a vector with the following components
 %           pars(1)=  Relative Ktrans (RKtrans)
@@ -95,7 +95,7 @@ function pars = fitdcemri(varargin)
 %           least squared fitting (Ex:[Ktrans_guess,kepTOI_guess])
 %       lb: vector of lowerbounds for the parameters (same form as above)
 %       ub: vector of upperbounds for the parameters (same form as above)
-%       'Tofts': This string indicates that you want the non-linear Tofts
+%       'convolute_with_exp_decay': This string indicates that you want the non-linear convolute_with_exp_decay
 %           Model (versus the non-linear RRM)
 %    /::OUTPUT::\
 %       pars: a vector with the following components
@@ -108,7 +108,7 @@ function pars = fitdcemri(varargin)
 % jdegrandchamp@email.arizona.edu   cardenaj@email.arizona.edu
 %
 %                       www.cardenaslab.org/resources
-% v2.0 09/24/2015
+% v3.0 01/11/2020
 
 
 % Check that the number of arguments is reasonable
@@ -146,18 +146,18 @@ if nargin == 4 %% LRRM
     
     % Switch to users desired fitting algorithm
     switch fit
-        case {'robust','Robust','ROBUST'}
+        case {'robust_linear'}
             
             % Estimate parameters using robust method
             B = robustfit(X,y);
             B = B(2:end);
             
-        case {'lsq','LSQ','least-squared'} 
+        case {'LRRM','lrrm'} 
             
             % Estimate parameters using LLSQ method (mldivide)
             B=X\y;
             
-        case {'nonneg','Nonneg','NONNEG','non-neg'}
+        case {'LRRM_nonneg','lrrm_nonneg'}
             
             % Estimate parameters using LLSQ method with non-negative constraint
             B=lsqnonneg(X,y);
@@ -237,7 +237,7 @@ elseif nargin == 7 %% Non-linear fits (RRM/Tofts)
             pred=rrm(B,[time,rr]);
             pars(4)=rsquare(toi,pred);
        
-        case {'Tofts','tofts','NLTM','nltm'}
+        case {'Tofts','convolute_with_exp_decay','NLTM','nltm'}
             
             toi = varargin{1};
             Cp = varargin{2};
@@ -268,18 +268,18 @@ elseif nargin == 7 %% Non-linear fits (RRM/Tofts)
             S.MaxIter=1000;
 
             % Perform the fitting (the function "rrm" is in the nested functions below)
-            [B,~,~] = lsqcurvefit(@tofts,x0,[time,Cp],toi,lb,ub,S);
+            [B,~,~] = lsqcurvefit(@convolute_with_exp_decay,x0,[time,Cp],toi,lb,ub,S);
 
             % Store each parameter (see reference)
             pars(1,1)=B(1);    %Ktrans
             pars(2,1)=B(2);    %kepTOI
 
-            pred=tofts(B,[time,Cp]);
+            pred=convolute_with_exp_decay(B,[time,Cp]);
             pars(3,1)=rsquare(toi,pred);
             
         otherwise
             
-            error('dce_mri_fit:Must choose ''Tofts'' or ''RRM'' for last option');
+            error('dce_mri_fit:Must choose ''convolute_with_exp_decay'' or ''RRM'' for last option');
             
     end
 
@@ -421,60 +421,29 @@ kepTOI=  beta(2);  %ktrans_toi  / ve_toi;  KepTOI
 
 R4= RKtrans*(kepRR-kepTOI);
 
-C_toi=RKtrans.*C_rr + R4.*convolution(C_rr,exp(-kepTOI.*time));
+pars = [R4,kepTOI];
+X    = [time,C_rr];
+
+C_toi=RKtrans.*C_rr + R4.*conv_with_exp_decay(pars,X);
 
 end
 
-function C_toi = tofts(beta,X)
-    
-    time=X(:,1);
-    Cp = X(:,2);
-    
-    Ktrans = beta(1);
-    kepTOI = beta(2);
-    
-    C_toi = Ktrans*convolution(Cp,exp(-kepTOI.*time));
 
-end
 
-function c = convolution(a, b, shape)
-%CONVOLUTION MODIFIED BY JULIO CARDENAS, MAY OF 2011.
-%   SAME THAN CONV BUT RETURN A VECTOR FROM a(1) to a(end), not the central
-%   section as described for the usual convolution function.
-%  
-
-if ~isvector(a) || ~isvector(b)
-  error(message('MATLAB:conv:AorBNotVector'));
-end
-
-if nargin < 3
-    shape = 'full';
-end
-
-if ~ischar(shape)
-  error(message('MATLAB:conv:unknownShapeParameter'));
-end
-
-% compute as if both inputs are column vectors
-[rows,~]=size(a);
-c = conv2(a(:),b(:),shape);
-c=c(1:rows);
-
-% restore orientation
-if shape(1) == 'f'
-    if length(a) > length(b)
-        if size(a,1) == 1 %row vector
-            c = c.';
-        end
-    else
-        if size(b,1) == 1 %row vector
-            c = c.';
-        end
-    end
-else
-    if size(a,1) == 1 %row vector
-        c = c.';
-    end
-end
-
-end
+%% Ithaca
+% 
+% When you set out for Ithaka
+% ask that your way be long,
+% full of adventure, full of instruction.
+%
+% The Laistrygonians and the Cyclops,
+% angry Poseidon - do not fear them:
+% such as these you will never find
+% as long as your thought is lofty, as long as a rare
+% emotion touch your spirit and your body.
+% The Laistrygonians and the Cyclops,
+% angry Poseidon - you will not meet them
+% unless you carry them in your soul,
+% unless your soul raise them up before you.  
+%                                                   ....................
+% Constantine P. Cavafy

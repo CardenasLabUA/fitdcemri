@@ -3,7 +3,7 @@ function [Cp_out] = Cp10(t)
 %THIS FUNCTION CALCULATES AN AIF WITH A SIMULATED INJECTION TIME OF 10
 %SECONDS
 %Injection of 10 seconds
-A= 30.0 ; %mM/min
+A= 30.0  %mM/min
 B= 1.0  ;
 C= 4.0  ; %min^-1
 D= 0.65 ; %mM
